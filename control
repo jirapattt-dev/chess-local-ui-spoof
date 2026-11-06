@@ -1,9 +1,9 @@
 Package: com.pseudoexudate.chesslocaluispoof
 Name: ChessLocalUISpoof
 Depends: 
-Version: 3.15.1
+Version: 3.15.2
 Architecture: iphoneos-arm64
-Description: Moderator + flair only, no title
+Description: Staff pawn flair only, no moderator
 Maintainer: jirapattt-dev
 Author: jirapattt-dev
 Section: Tweaks

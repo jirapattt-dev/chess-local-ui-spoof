@@ -3,13 +3,12 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
-/* 3.15.1
- * No title. Only moderator + flair.
- * Force isStaff, setModerator:, staff pawn flair URL.
+/* 3.15.2
+ * Flair only. No moderator.
+ * Force staff pawn URL on any flair set for the current user.
  */
 
-static IMP gSetFlairURL, gSetupFlairWithURL, gSetFlairForPlayer, gSetFlairCode, gSetFlairIcon, gUpdateFlairURL;
-static IMP gSetModerator, gIsStaff;
+static IMP gSetFlairURL, gSetupFlairWithURL, gSetFlairForPlayer, gUpdateFlairURL;
 static IMP gPlayerInfoFactory, gLiveUserInit;
 static BOOL gReady;
 static NSUInteger gTries;
@@ -33,19 +32,11 @@ static BOOL ChessNameIsMe(NSString *n) {
 static NSString *ChessPlayerName(id p) { if (!p) return nil; for (NSString *k in @[ @"username", @"userName", @"user_name", @"name", @"authorName", @"senderName" ]) { id v = ChessSafe(p, k); if ([v isKindOfClass:NSString.class] && [(NSString *)v length]) return v; } return nil; }
 static BOOL ChessIsOwnPlayer(id player) { if (!player) return NO; for (NSString *k in @[ @"isCurrentUser", @"isCurrentUserPlayer", @"isSelf", @"isMe" ]) { id v = ChessSafe(player, k); if ([v respondsToSelector:@selector(boolValue)] && [v boolValue]) return YES; } return ChessNameIsMe(ChessPlayerName(player)); }
 
-static BOOL HookIsStaff(id self, SEL _cmd) { (void)self; (void)_cmd; return YES; }
-static void HookSetModerator(id self, SEL _cmd, BOOL v) {
-    (void)v;
-    if (gSetModerator) ((void (*)(id, SEL, BOOL))gSetModerator)(self, _cmd, YES);
-}
-
 static void ChessForceFlairOn(id obj) {
     if (!obj) return;
     @try {
         if ([obj respondsToSelector:@selector(setFlairURL:)])
             ((void (*)(id, SEL, id))objc_msgSend)(obj, @selector(setFlairURL:), [NSURL URLWithString:kStaffFlair]);
-        if ([obj respondsToSelector:@selector(setModerator:)])
-            ((void (*)(id, SEL, BOOL))objc_msgSend)(obj, @selector(setModerator:), YES);
     } @catch (__unused NSException *e) {}
 }
 
@@ -60,12 +51,6 @@ static void HookSetupFlairWithURL(id self, SEL _cmd, id url) {
 static void HookSetFlairForPlayer(id self, SEL _cmd, id player) {
     if (ChessIsOwnPlayer(player) || ChessNameIsMe(ChessPlayerName(player))) ChessForceFlairOn(player);
     if (gSetFlairForPlayer) ((void (*)(id, SEL, id))gSetFlairForPlayer)(self, _cmd, player);
-}
-static void HookSetFlairCode(id self, SEL _cmd, id code) {
-    if (gSetFlairCode) ((void (*)(id, SEL, id))gSetFlairCode)(self, _cmd, code);
-}
-static void HookSetFlairIcon(id self, SEL _cmd, id icon) {
-    if (gSetFlairIcon) ((void (*)(id, SEL, id))gSetFlairIcon)(self, _cmd, icon);
 }
 static void HookUpdateFlairURL(id self, SEL _cmd, id url) {
     id use = (ChessIsOwnPlayer(self) || ChessNameIsMe(ChessPlayerName(self))) ? [NSURL URLWithString:kStaffFlair] : url;
@@ -104,13 +89,9 @@ static void Retry(void) { if (gTries++ >= 80) return; dispatch_after(dispatch_ti
 static void Try(void) {
     if (gReady) return;
     @autoreleasepool {
-        InstallAnywhere(@selector(isStaff), (IMP)HookIsStaff, &gIsStaff);
-        InstallAnywhere(@selector(setModerator:), (IMP)HookSetModerator, &gSetModerator);
         InstallAnywhere(@selector(setFlairURL:), (IMP)HookSetFlairURL, &gSetFlairURL);
         InstallAnywhere(@selector(setupFlairWithURL:), (IMP)HookSetupFlairWithURL, &gSetupFlairWithURL);
         InstallAnywhere(@selector(setFlairForPlayer:), (IMP)HookSetFlairForPlayer, &gSetFlairForPlayer);
-        InstallAnywhere(@selector(setFlairCode:), (IMP)HookSetFlairCode, &gSetFlairCode);
-        InstallAnywhere(@selector(setFlairIcon:), (IMP)HookSetFlairIcon, &gSetFlairIcon);
         InstallAnywhere(@selector(updateFlairURL:), (IMP)HookUpdateFlairURL, &gUpdateFlairURL);
 
         SEL piSel = @selector(playerInfoWithUsername:chessTitle:avatarURL:flairURL:premiumStatus:countryId:color:);
@@ -125,11 +106,11 @@ static void Try(void) {
         SEL liveInit = @selector(initLiveUserWithUsername:title:flairURL:premiumStatus:friends:);
         for (NSString *name in @[ @"CHLiveUser", @"CHCurrentUser", @"CHPlayerInfo" ]) { Class c = NSClassFromString(name); if (c && class_getInstanceMethod(c, liveInit)) { Install(c, liveInit, (IMP)HookLiveUserInit, &gLiveUserInit); if (gLiveUserInit) break; } }
 
-        if (gIsStaff || gSetModerator || gSetFlairURL) {
+        if (gSetFlairURL || gPlayerInfoFactory) {
             gReady = YES;
             ChessForceFlairOn(ChessUser());
             dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-            dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 2ull * NSEC_PER_SEC), 4ull * NSEC_PER_SEC, (uint64_t)(0.5 * NSEC_PER_SEC));
+            dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 2ull * NSEC_PER_SEC), 5ull * NSEC_PER_SEC, (uint64_t)(0.5 * NSEC_PER_SEC));
             dispatch_source_set_event_handler(timer, ^{ ChessForceFlairOn(ChessUser()); });
             dispatch_resume(timer);
         } else Retry();
