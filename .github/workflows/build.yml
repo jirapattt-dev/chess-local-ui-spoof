@@ -1,0 +1,43 @@
+name: Build iOS tweak
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Install dpkg
+        run: brew install dpkg
+
+      - name: Build Tweak only
+        run: |
+          set -e
+          mkdir -p build-output package-root/DEBIAN package-root/Library/MobileSubstrate/DynamicLibraries
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos clang -x objective-c++ -fobjc-arc -fblocks \
+            -isysroot "$SDK" -miphoneos-version-min=15.0 \
+            -arch arm64 -arch arm64e -dynamiclib \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
+            -Wl,-install_name,@executable_path/Frameworks/ChessLocalUISpoof.dylib \
+            Tweak.xm -o build-output/ChessLocalUISpoof.dylib
+          VERSION=$(grep '^Version:' control | awk '{print $2}')
+          cp ChessLocalUISpoof.plist package-root/Library/MobileSubstrate/DynamicLibraries/
+          cp build-output/ChessLocalUISpoof.dylib package-root/Library/MobileSubstrate/DynamicLibraries/
+          cp control package-root/DEBIAN/control
+          dpkg-deb --build --root-owner-group package-root "build-output/com.pseudoexudate.chess-local-ui-spoof_${VERSION}_iphoneos-arm64.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chess-local-ui-spoof-build
+          path: build-output/*
