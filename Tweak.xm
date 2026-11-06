@@ -3,16 +3,17 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
-/* 3.15.2
- * Flair only. No moderator.
- * Force staff pawn URL on any flair set for the current user.
+/* 3.15.3
+ * Force flair code to Flair/pawn_traditional (local asset).
+ * Also force staff pawn URL as fallback.
  */
 
-static IMP gSetFlairURL, gSetupFlairWithURL, gSetFlairForPlayer, gUpdateFlairURL;
+static IMP gSetFlairURL, gSetupFlairWithURL, gSetFlairForPlayer, gSetFlairCode, gUpdateFlairURL;
 static IMP gPlayerInfoFactory, gLiveUserInit;
 static BOOL gReady;
 static NSUInteger gTries;
 
+static NSString * const kStaffCode = @"Flair/pawn_traditional";
 static NSString * const kStaffFlair = @"https://images.chesscomfiles.com/chess-flair/staff_mod_account/pawn_traditional.svg";
 
 static id ChessSafe(id o, NSString *k) { if (!o || !k.length) return nil; @try { return [o valueForKey:k]; } @catch (__unused NSException *e) { return nil; } }
@@ -35,11 +36,17 @@ static BOOL ChessIsOwnPlayer(id player) { if (!player) return NO; for (NSString 
 static void ChessForceFlairOn(id obj) {
     if (!obj) return;
     @try {
+        if ([obj respondsToSelector:@selector(setFlairCode:)])
+            ((void (*)(id, SEL, id))objc_msgSend)(obj, @selector(setFlairCode:), kStaffCode);
         if ([obj respondsToSelector:@selector(setFlairURL:)])
             ((void (*)(id, SEL, id))objc_msgSend)(obj, @selector(setFlairURL:), [NSURL URLWithString:kStaffFlair]);
     } @catch (__unused NSException *e) {}
 }
 
+static void HookSetFlairCode(id self, SEL _cmd, id code) {
+    id use = (ChessIsOwnPlayer(self) || ChessNameIsMe(ChessPlayerName(self))) ? kStaffCode : code;
+    if (gSetFlairCode) ((void (*)(id, SEL, id))gSetFlairCode)(self, _cmd, use);
+}
 static void HookSetFlairURL(id self, SEL _cmd, id url) {
     id use = (ChessIsOwnPlayer(self) || ChessNameIsMe(ChessPlayerName(self))) ? [NSURL URLWithString:kStaffFlair] : url;
     if (gSetFlairURL) ((void (*)(id, SEL, id))gSetFlairURL)(self, _cmd, use);
@@ -89,6 +96,7 @@ static void Retry(void) { if (gTries++ >= 80) return; dispatch_after(dispatch_ti
 static void Try(void) {
     if (gReady) return;
     @autoreleasepool {
+        InstallAnywhere(@selector(setFlairCode:), (IMP)HookSetFlairCode, &gSetFlairCode);
         InstallAnywhere(@selector(setFlairURL:), (IMP)HookSetFlairURL, &gSetFlairURL);
         InstallAnywhere(@selector(setupFlairWithURL:), (IMP)HookSetupFlairWithURL, &gSetupFlairWithURL);
         InstallAnywhere(@selector(setFlairForPlayer:), (IMP)HookSetFlairForPlayer, &gSetFlairForPlayer);
@@ -106,7 +114,7 @@ static void Try(void) {
         SEL liveInit = @selector(initLiveUserWithUsername:title:flairURL:premiumStatus:friends:);
         for (NSString *name in @[ @"CHLiveUser", @"CHCurrentUser", @"CHPlayerInfo" ]) { Class c = NSClassFromString(name); if (c && class_getInstanceMethod(c, liveInit)) { Install(c, liveInit, (IMP)HookLiveUserInit, &gLiveUserInit); if (gLiveUserInit) break; } }
 
-        if (gSetFlairURL || gPlayerInfoFactory) {
+        if (gSetFlairCode || gSetFlairURL || gPlayerInfoFactory) {
             gReady = YES;
             ChessForceFlairOn(ChessUser());
             dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
