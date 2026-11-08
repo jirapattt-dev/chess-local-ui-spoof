@@ -3,14 +3,18 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
-/* 3.15.6
- * Draw a green pawn and replace the current flair image next to the username.
- * Does not depend on asset name.
+/* 3.16.0
+ * Display-only spoof: replace current user's username labels with CHESScom.
+ * Server still sees the real account. No protobuf.
  */
 
 static BOOL gReady;
 static NSUInteger gTries;
-static const void *kReplacedKey = &kReplacedKey;
+static const void *kSpoofedKey = &kSpoofedKey;
+
+static NSString * const kSpoofName = @"CHESScom";
+static NSString * const kSpoofFull = @"Chess.com Team";
+static NSString * const kAvatarURL = @"https://images.chesscomfiles.com/uploads/v1/user/33.862d5ff1.200x200o.0fc116e99993.png";
 
 static id ChessSafe(id o, NSString *k) { if (!o || !k.length) return nil; @try { return [o valueForKey:k]; } @catch (__unused NSException *e) { return nil; } }
 static id ChessUser(void) { Class c = NSClassFromString(@"CHCurrentUser"); if (!c) return nil; return ChessSafe(c, @"currentUser") ?: ChessSafe(c, @"sharedUser") ?: ChessSafe(c, @"sharedInstance"); }
@@ -27,53 +31,19 @@ static BOOL ChessNameIsMe(NSString *n) {
     return [me.lowercaseString hasPrefix:t.lowercaseString];
 }
 
-static UIImage *ChessGreenPawn(void) {
-    static UIImage *img;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        CGSize sz = CGSizeMake(32, 32);
-        UIGraphicsBeginImageContextWithOptions(sz, NO, 0);
-        CGContextRef ctx = UIGraphicsGetCurrentContext();
-        [[UIColor colorWithRed:0.2 green:0.7 blue:0.3 alpha:1] setFill];
-        // head
-        CGContextFillEllipseInRect(ctx, CGRectMake(10, 4, 12, 12));
-        // neck
-        CGContextFillRect(ctx, CGRectMake(14, 14, 4, 4));
-        // body
-        CGContextFillEllipseInRect(ctx, CGRectMake(8, 16, 16, 10));
-        // base
-        CGContextFillRect(ctx, CGRectMake(6, 24, 20, 4));
-        img = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-    });
-    return img;
-}
-
-static void ChessReplaceFlairNearLabel(UILabel *lab) {
+static void ChessSpoofLabel(UILabel *lab) {
     if (!lab || !ChessNameIsMe(lab.text)) return;
-    UIView *parent = lab.superview;
-    if (!parent) return;
-    UIImage *pawn = ChessGreenPawn();
-    if (!pawn) return;
-
-    for (UIView *s in parent.subviews) {
-        if (s == lab) continue;
-        if (![s isKindOfClass:UIImageView.class]) continue;
-        UIImageView *iv = (UIImageView *)s;
-        CGFloat w = iv.bounds.size.width;
-        CGFloat h = iv.bounds.size.height;
-        if (w < 8 || w > 40 || h < 8 || h > 40) continue;
-        // roughly to the right of the label
-        if (iv.frame.origin.x < lab.frame.origin.x) continue;
-        if (objc_getAssociatedObject(iv, kReplacedKey)) continue;
-        iv.image = pawn;
-        iv.hidden = NO;
-        iv.alpha = 1;
-        objc_setAssociatedObject(iv, kReplacedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (objc_getAssociatedObject(lab, kSpoofedKey)) return;
+    NSString *orig = lab.text;
+    if (orig.length > 16 || [orig containsString:@"..."]) {
+        lab.text = [kSpoofName stringByAppendingString:@"…"];
+    } else {
+        lab.text = kSpoofName;
     }
+    objc_setAssociatedObject(lab, kSpoofedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
-static void ChessWalkAndReplace(UIView *root) {
+static void ChessWalkAndSpoof(UIView *root) {
     if (!root || !ChessMe().length) return;
     NSMutableArray *q = [NSMutableArray arrayWithObject:root];
     NSInteger n = 0;
@@ -82,7 +52,7 @@ static void ChessWalkAndReplace(UIView *root) {
         if ([v isKindOfClass:UILabel.class]) {
             UILabel *lab = (UILabel *)v;
             if (ChessNameIsMe(lab.text) && lab.font.pointSize >= 10 && lab.font.pointSize <= 22)
-                ChessReplaceFlairNearLabel(lab);
+                ChessSpoofLabel(lab);
         }
         for (UIView *s in v.subviews) [q addObject:s];
     }
@@ -93,10 +63,10 @@ static void ChessForceOnAllWindows(void) {
         if (@available(iOS 13.0, *)) {
             for (UIScene *sc in UIApplication.sharedApplication.connectedScenes) {
                 if (![sc isKindOfClass:UIWindowScene.class]) continue;
-                for (UIWindow *w in ((UIWindowScene *)sc).windows) if (!w.hidden) ChessWalkAndReplace(w);
+                for (UIWindow *w in ((UIWindowScene *)sc).windows) if (!w.hidden) ChessWalkAndSpoof(w);
             }
         }
-        for (UIWindow *w in UIApplication.sharedApplication.windows) if (!w.hidden) ChessWalkAndReplace(w);
+        for (UIWindow *w in UIApplication.sharedApplication.windows) if (!w.hidden) ChessWalkAndSpoof(w);
     } @catch (__unused NSException *e) {}
 }
 
