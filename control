@@ -1,9 +1,9 @@
 Package: com.pseudoexudate.chesslocaluispoof
 Name: ChessLocalUISpoof
 Depends: 
-Version: 3.16.0
+Version: 3.16.1
 Architecture: iphoneos-arm64
-Description: Display-only spoof as CHESScom
+Description: FM title only, no flair or moderator
 Maintainer: jirapattt-dev
 Author: jirapattt-dev
 Section: Tweaks
